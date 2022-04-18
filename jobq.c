@@ -38,146 +38,188 @@ jstruct JobArray[1000];
 queue *JobWaiting;
 
 
-int writeLog(char *filename, int file_descriptor)
+char *copyInputString(char *str, int i)
 {
-    file_descriptor= open(filename, O_CREAT | O_APPEND | O_WRONLY, 0755);
-    if (file_descriptor == -1)
+    int chV;
+    char *duplicate = malloc(sizeof(char) * strlen(str));
+
+    for(i;(chV = str[++i]) != '\0';)
     {
-        fprintf(stderr, "Opening the file failed. Check permissions \"%s\"\n", filename);
-        perror("open");
-        exit(1);
+        duplicate[i] = chV;
     }
-    return file_descriptor;
+    duplicate[i] = '\0';
+    return duplicate;
 }
 
-void *proc_done(void *arg)
+jstruct job_generation(char *j_commands, int job_id)
 {
-    pid_t pid;   
-    char **args; 
-     jstruct *jobp_Pointer;
-
-    jobp_Pointer = (jstruct *)arg;
-
-    jobRunning++;
-    jobp_Pointer->j_status = "working";
-    jobp_Pointer->start_time = timeAndDateStr(NULL);
-
-    pid = fork();
-    if (pid == 0) 
-    {
-        dup2(writeLog(jobp_Pointer->fdout,0), 1); 
-        dup2(writeLog(jobp_Pointer->fderr,0), 2); 
-        args = arguments(jobp_Pointer->j_commands);
-        execvp(args[0], args); 
-        fprintf(stderr, "Executing the command failed: \"%s\"\n", args[0]);
-        perror("execvp");
-        exit(1);
-    }
-    else if (pid > 0) 
-    {
-        waitpid(pid, &jobp_Pointer->exit_status, WUNTRACED); 
-        jobp_Pointer->j_status = "success";
-        jobp_Pointer->stop_time = timeAndDateStr(NULL);
-
-        if (!WIFEXITED(jobp_Pointer->exit_status)) 
-            fprintf(stderr, "Child process %d did not terminate normally!\n", pid);
-    }
-    else
-    {
-        fprintf(stderr, "Error: Forking process failed\n");
-        perror("fork");
-        exit(1);
-    }
-
-    jobRunning--;
-    return NULL;
+    jstruct genjob;
+    genjob.job_id = job_id;
+    genjob.exit_status = -1;
+    genjob.j_commands = copyInputString(j_commands, -1);
+    genjob.start_time = genjob.stop_time = NULL;
+    genjob.j_status = "waiting";
+    sprintf(genjob.fdout, "%d.out", genjob.job_id);
+    sprintf(genjob.fderr, "%d.err", genjob.job_id);
+    return genjob;
 }
 
-void *proc_success(void *args)
+
+
+void jobShowSubmit(jstruct *job, int k, char *ch, char *command)
 {
-    jstruct *jobp_Pointer;
-    jobRunning = 0;
-    while(true)
+   
+    if (job != NULL)
     {
-        if (JobWaiting->count > 0)
+    if (k != 0)
         {
-            if(jobByJob>jobRunning)
+            if (strcmp(command, "showjobs") ==0) 
             {
-                jobp_Pointer = queue_delete(JobWaiting);
-                pthread_create(&jobp_Pointer->thread_id, NULL, proc_done, jobp_Pointer);
-                pthread_detach(jobp_Pointer->thread_id);
-            }
-        }
-        sleep(1); 
-    }
-    return NULL;
-}
-
-
-
-int main(int argc, char **argv)
-{
-    printf("To quit the Program Please Press 'CNTL+%c'\n",92);
-    int i = 0;              
-    char inputLine[1000]; 
-    char *kw, *c=NULL;           
-    char *j_commands;
-    jstruct *jobp_Pointer;
-
-    char *fderr;  
-    pthread_t thread_id; 
-
-    if (argc != 2)
-    {
-        printf("Usage: %s Number of simultanious processes\n", argv[0]);
-        exit(0);
-    }
-
-
-    jobByJob = atoi(argv[1]);
-
-    jobByJob < 1?jobByJob = 1:jobByJob;
-
-    jobByJob > 8?jobByJob = 8:jobByJob;
-
-
-    fderr = malloc(sizeof(char) * (strlen(argv[0]) + 7));
-    sprintf(fderr, "%s.err", argv[0]);
-    dup2(writeLog(fderr,0), 2);
-
-    JobWaiting = queue_init(100);
-
-    pthread_create(&thread_id, NULL, proc_success, NULL);
-
-    while (printf("Enter command> ") && gettingTheInput(1000, inputLine, 0) != -1)
-    {
-        if ((kw = strtok(copyInputString(inputLine, -1), " \t\n\r\x0b\x0c")) != NULL) 
-        {
-            if (strcmp(kw, "submit") == 0) 
-            {
-                if (i >= 1000)
+                printf("jobid\tcommand\t\t\tstatus\n");
+                int i=0;
+                while( i < k) 
                 {
-                    printf("You have submitted the max number of jobs. Rerun the program to operate on more\n");
-                }
-                else if (JobWaiting->count >= JobWaiting->size)
-                {
-                    printf("Max Queue of jobs are submitted. Please wait for them to complete\n");
-                }
-                else
-                {
-                    j_commands = firstCharPointer((strstr(inputLine, "submit") + 6), 0);
-                    JobArray[i] = job_generation(j_commands, i);
-                    queue_insert(JobWaiting, JobArray + i);
-                    printf("job %d added to the queue\n", (i++)+1);
+                    if (strcmp(job[i].j_status, "success") != 0)
+                    {
+                        printf("%d\t%s\t%s\n",job[i].job_id+1,job[i].j_commands,job[i].j_status);
+                    }
+                    i++;
                 }
             }
-            else if (strcmp(kw, "showjobs") == 0 || strcmp(kw, "submithistory") == 0)
+            else if (strcmp(command, "submithistory") == 0) 
             {
-                jobShowSubmit(JobArray, i, c, kw);
+                printf("jobid\tcommand\t\t\tstarttime\t\t\tendtime\t\t\t\tstatus\n");
+                int i = 0;
+                while(i < k)
+                {
+                    if (strcmp(job[i].j_status, "success") == 0)
+                    {
+                        printf("%d\t%s\t%s\t%s\t%s\n",job[i].job_id+1,job[i].j_commands,job[i].start_time,job[i].stop_time,job[i].j_status);
+                    }
+                    i++;
+                }
             }
         }
     }
-    kill(0, 2); 
+}
 
-    exit(0);
+queue *queue_init(int k)
+{
+    queue *q = malloc(sizeof(queue));
+    q->buffer = malloc(sizeof(jstruct *) * k);
+    q->size = k;
+    q->end = 0;
+    q->start = 0;
+    q->count = 0;
+
+    return q;
+}
+
+int queue_insert(queue *q, jstruct *jobp_Pointer)
+{
+    if ((q == NULL) || (q->count == q->size))
+        return -1;
+
+    q->buffer[q->end % q->size] = jobp_Pointer;
+    q->end = (q->end + 1) % q->size;
+    q->count++;
+
+    return q->count;
+}
+
+jstruct *queue_delete(queue *q)
+{
+    if ((q == NULL) || (q->count == 0))
+        return (jstruct *)-1;
+
+    jstruct *genjob = q->buffer[q->start];
+    q->start = (q->start + 1) % q->size;
+    q->count--;
+
+    return genjob;
+}
+
+void queue_destroy(queue *q)
+{
+    free(q->buffer);
+    free(q);
+}
+
+int gettingTheInput( int k, char *str, int w)
+{
+    int i, chV;
+    for (i = 0; i < k - 1 && (chV = getchar()) != '\n'; ++i)
+    {
+        if (chV == EOF)
+            return -1;
+        str[i] = chV;
+    }
+    str[i] = '\0';
+    return i;
+    
+}
+
+bool nullSpaceChars(char chV)
+{
+    if( chV == '\n' ||chV == '\r' )
+        return true;
+    
+
+    else if(chV == ' ' ||chV == '\t' ||chV == '\x0b' ||chV == '\x0c')
+        return true;
+
+    else return false;
+}
+
+char *firstCharPointer(char *str, int i)
+{
+    char *fcp;
+        for(i=0; nullSpaceChars(str[i])==true;)
+        {
+            i++;
+        }
+    fcp = str + i;
+    return fcp;
+}
+
+
+
+char *newStringCopy(char *str, int i)
+{
+    char *duplicate = malloc(sizeof(char) * strlen(str));;
+    int  chV;
+
+   
+    for(i ;(chV = str[++i]) != '\0' && chV != '\n'; )
+    {
+        duplicate[i] = chV;
+    }
+    duplicate[i] = '\0';
+    return duplicate;
+}
+
+char *timeAndDateStr(char *nsc)
+{
+    time_t timer = time(NULL);
+    nsc=newStringCopy(ctime(&timer), -1);
+    return nsc;
+}
+
+char **arguments(char *inputLine)
+{
+    char *duplicate = malloc(sizeof(char) * (strlen(inputLine) + 1));
+    strcpy(duplicate, inputLine);
+
+    char *arg;
+    int i = 0;
+    char **args = malloc(sizeof(char *));
+    while ((arg = strtok(duplicate, " \t")) != NULL)
+    {
+        args[i] = malloc(sizeof(char) * (strlen(arg) + 1));
+        strcpy(args[i], arg);
+        args = realloc(args, sizeof(char *) * (++i + 1));
+        duplicate = NULL;
+    }
+    args[i] = NULL;
+    return args;
 }
