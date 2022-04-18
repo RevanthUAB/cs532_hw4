@@ -1,0 +1,23 @@
+OBJS	= inputedit.o jobqueue.o schedulejob.o
+SOURCE	= inputedit.c jobqueue.c schedulejob.c
+HEADER	= header.h
+OUT	= jobq
+CC	 = gcc
+FLAGS	 = -g -c -Wall
+LFLAGS	 = -lpthread
+
+all: $(OBJS)
+	$(CC) -g $(OBJS) -o $(OUT) $(LFLAGS)
+
+inputedit.o: inputedit.c
+	$(CC) $(FLAGS) inputedit.c 
+
+jobqueue.o: jobqueue.c
+	$(CC) $(FLAGS) jobqueue.c 
+
+schedulejob.o: schedulejob.c
+	$(CC) $(FLAGS) schedulejob.c 
+
+
+clean:
+	rm -f $(OBJS) $(OUT)
